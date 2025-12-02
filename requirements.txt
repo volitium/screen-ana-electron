@@ -1,4 +1,5 @@
 ## Application Requirements: Screen Image Analysis Tool
+An Electron application with Vue and TypeScript
 
 ### Core Functionality
 
