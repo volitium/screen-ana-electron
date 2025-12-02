@@ -1,0 +1,47 @@
+## Application Requirements: Screen Image Analysis Tool
+
+### Core Functionality
+
+**1. Screen Image Selection**
+- Manual selection: Click and drag to define rectangular regions on screen captures
+- AI-assisted selection: Automatic detection and boxing of relevant UI elements, text blocks, or images (optional)
+- Support for multiple selection modes (full screen, specific windows, custom regions)
+
+**2. Image Boxing System**
+- Draw resizable bounding boxes around selected screen regions
+- Visual highlighting with configurable box styles (color, border thickness, transparency)
+- Box labeling and numbering system
+- Ability to add/remove/modify boxes after creation
+
+**3. Analysis Results Display**
+- Side-by-side layout showing original screen capture with overlayed boxes
+- Dedicated results panel adjacent to each boxed region
+- Real-time analysis updates when boxes are modified
+- Collapsible/expandable result sections
+
+### Technical Requirements
+
+**Electron Window Configuration:**
+```
+- Main window: 1200x800px minimum size
+- Dual-pane layout (image viewer + results panel) - (optional)
+- Always-on-top option for screen capture mode
+- Transparent overlay windows for selection tools
+
+```
+
+**Analysis Features:**
+- Settings for image capture interval
+- Captured images to be sent to API e.g. https://abce.com/api/check, 
+with returned result e.g. { result: Anomaly, confidance: 20%, meta: 'asdfas' } or { result: Normal, confidance: 67%, meta: 'osdfj;asl' }
+
+
+**UI/UX Requirements:**
+- Intuitive selection tools with keyboard shortcuts
+- Real-time box manipulation (resize, move, delete)
+- Dark/light theme support  (optional)
+
+**Performance:**
+- Fast rendering of screen captures (60fps interaction)  (optional)
+- Efficient AI processing with progress indicators  (optional)
+- Memory management for large screen captures  (optional)
