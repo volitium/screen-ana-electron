@@ -1,0 +1,78 @@
+# Screen Image Analysis Tool
+
+## Overview
+
+Screen Image Analysis Tool is a Windows desktop application built with Electron, Vue, and TypeScript. The program lets users capture a screen or application window, draw boxes around specific areas of the captured image, and view analysis results for each selected region.
+
+The main purpose of the app is to help inspect parts of a screen capture, such as UI elements, text areas, images, or other visual regions. Each selected region can be sent to an analysis API, which returns a result such as `Normal` or `Anomaly`, along with a confidence value and extra metadata.
+
+## Main Features
+
+- Select a screen or window to capture
+- View the captured screen inside the app
+- Click and drag to draw bounding boxes around regions
+- Move and resize boxes after creating them
+- Delete boxes that are no longer needed
+- View results for each box in the right-side analysis panel
+- Refresh the current screen capture
+- Run capture refreshes on a timed interval
+- Toggle always-on-top mode
+- Switch between dark and light themes
+- Use demo auto-boxing to quickly add sample boxes for testing
+
+## How the Program Works
+
+After the user selects a screen or window, the app displays a still capture of that source. The user can then draw rectangular boxes over areas they want to analyze. Each box is numbered automatically, such as `Box 1`, `Box 2`, and so on.
+
+When a box is created or changed, the app crops that selected region from the screenshot and sends the cropped image to the analysis function. In the current testing version, the API may be mocked, which means it returns fake sample results instead of calling a real server.
+
+The results appear in the panel on the right side of the app. Each result card shows the box number, region coordinates, result, confidence, and metadata.
+
+## How to Use
+
+1. Open the application.
+
+2. Click `Select Screen / Window`.
+
+3. Choose the screen or application window you want to capture.
+
+4. The selected capture will appear in the main image viewer.
+
+5. Click and drag on the image to create a box around the area you want to inspect.
+
+6. To move a box, click and drag the box.
+
+7. To resize a box, drag the small square handle at the bottom-right corner.
+
+8. To delete a box, click the red `x` on the box or click `Delete` in the results panel.
+
+9. To manually analyze a region again, click `Analyze` in the results panel.
+
+10. To refresh the screenshot, click `Refresh Capture`.
+
+11. To refresh automatically, set the interval in seconds and click `Start Interval`.
+
+12. To stop automatic refreshes, click `Stop Interval`.
+
+13. To keep the app above other windows, click `Always On Top`.
+
+14. To switch the appearance, click the theme button.
+
+## Demo Auto Box
+
+The `AI Auto Box Mock` button is a demo feature. It does not currently use real AI. It simply creates sample boxes automatically so the user can test the interface.
+
+This can later be replaced with a real AI detection system that finds UI elements, text blocks, or images automatically.
+
+A real auto-boxing API could return data like this:
+
+```json
+[
+  {
+    "x": 100,
+    "y": 200,
+    "width": 300,
+    "height": 120,
+    "label": "Text Block"
+  }
+]
