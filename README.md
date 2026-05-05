@@ -8,6 +8,8 @@ An Electron application with Vue and TypeScript
 
 ## Project Setup
 
+- Make sure that Node JS is version 20 or above. Check by typing in  node -v
+
 ### Install
 
 ```bash
