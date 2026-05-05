@@ -1,20 +1,35 @@
-import { resolve } from 'path'
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
-import vue from '@vitejs/plugin-vue'
+import { defineConfig } from "electron-vite";
+import vue from "@vitejs/plugin-vue";
+import { resolve } from "path";
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    build: {
+      rollupOptions: {
+        input: {
+          main: resolve(__dirname, "src/main/main.ts")
+        }
+      }
+    }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()]
+    build: {
+      rollupOptions: {
+        input: {
+          preload: resolve(__dirname, "src/main/preload.ts")
+        }
+      }
+    }
   },
   renderer: {
-    resolve: {
-      alias: {
-        '@renderer': resolve('src/renderer/src')
+    root: ".",
+    plugins: [vue()],
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, "index.html")
+        }
       }
-    },
-    plugins: [vue()]
+    }
   }
-})
+});

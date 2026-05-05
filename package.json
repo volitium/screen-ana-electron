@@ -1,0 +1,48 @@
+{
+  "name": "screen-image-analysis-tool",
+  "version": "1.0.0",
+  "description": "Electron Vue TypeScript screen image analysis tool for Windows",
+  "main": "out/main/main.js",
+  "author": "Student",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "dist:win": "electron-vite build && electron-builder --win",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "^5.2.4",
+    "electron-store": "^10.0.1",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^3.1.0",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.0",
+    "vue-tsc": "^2.2.8"
+  },
+  "build": {
+    "appId": "com.example.screenimageanalysis",
+    "productName": "Screen Image Analysis Tool",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
