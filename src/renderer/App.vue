@@ -36,6 +36,14 @@ const selectedBoxId = ref<number | null>(null);
 const dragOffsetX = ref(0);
 const dragOffsetY = ref(0);
 
+type PanelPosition = "top-left" | "top-right" | "bottom-right" | "bottom-left";
+
+const panelPosition = ref<PanelPosition>("top-right");
+
+const panelPositionClass = computed(() => {
+  return `panel-${panelPosition.value}`;
+});
+
 const draftBoxStyle = computed(() => {
   const x = Math.min(startX.value, currentX.value);
   const y = Math.min(startY.value, currentY.value);
@@ -67,6 +75,17 @@ async function reportPanelBounds(): Promise<void> {
     width: rect.width,
     height: rect.height
   });
+}
+
+async function enableClickThroughOutsidePanel(): Promise<void> {
+  await reportPanelBounds();
+  await window.electronAPI.setDrawingMode(false);
+  await window.electronAPI.setBrowserInteractionMode(true);
+}
+
+async function setPanelPosition(position: PanelPosition): Promise<void> {
+  panelPosition.value = position;
+  await enableClickThroughOutsidePanel();
 }
 
 async function selectScreen(): Promise<void> {
@@ -101,9 +120,10 @@ async function selectScreen(): Promise<void> {
       stopScreen();
     });
 
-    await reportPanelBounds();
+    await enableClickThroughOutsidePanel();
   } catch {
     latestAnswer.value = "Screen selection was cancelled or failed.";
+    await enableClickThroughOutsidePanel();
   }
 }
 
@@ -124,8 +144,7 @@ async function stopScreen(): Promise<void> {
   frozenImageDataUrl.value = "";
   latestAnswer.value = "Screen access stopped.";
 
-  await window.electronAPI.setDrawingMode(false);
-  await window.electronAPI.setBrowserInteractionMode(false);
+  await enableClickThroughOutsidePanel();
 }
 
 function captureWholeFrameCanvas(): HTMLCanvasElement | null {
@@ -166,8 +185,6 @@ async function enterDrawMode(): Promise<void> {
     return;
   }
 
-  await window.electronAPI.forceFullScreenBounds();
-
   const frame = captureWholeFrameDataUrl();
 
   if (!frame) {
@@ -191,11 +208,9 @@ async function finishDrawing(): Promise<void> {
   resizingBoxId.value = null;
 
   latestAnswer.value =
-    "Drawing finished. Chrome/Zoom is clickable outside the panel. The panel remains clickable.";
+    "Drawing finished. Tab is clickable outside the panel. The panel remains clickable.";
 
-  await reportPanelBounds();
-  await window.electronAPI.setDrawingMode(false);
-  await window.electronAPI.setBrowserInteractionMode(true);
+  await enableClickThroughOutsidePanel();
 }
 
 function getPointerPosition(event: MouseEvent): { x: number; y: number } {
@@ -404,6 +419,7 @@ async function analyzeSingleBox(id: number): Promise<void> {
 
   if (!croppedImage) {
     box.error = "Could not capture selected region.";
+    await enableClickThroughOutsidePanel();
     return;
   }
 
@@ -418,14 +434,14 @@ async function analyzeSingleBox(id: number): Promise<void> {
     box.loading = false;
   }
 
-  await reportPanelBounds();
-  await window.electronAPI.setBrowserInteractionMode(true);
+  await enableClickThroughOutsidePanel();
 }
 
 async function analyzeAll(): Promise<void> {
   await window.electronAPI.setBrowserInteractionMode(false);
 
   if (!isLive.value || isAnalyzing.value) {
+    await enableClickThroughOutsidePanel();
     return;
   }
 
@@ -448,8 +464,7 @@ async function analyzeAll(): Promise<void> {
     latestAnswer.value = error instanceof Error ? error.message : "Analysis failed.";
   } finally {
     isAnalyzing.value = false;
-    await reportPanelBounds();
-    await window.electronAPI.setBrowserInteractionMode(true);
+    await enableClickThroughOutsidePanel();
   }
 }
 
@@ -496,8 +511,8 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-onMounted(() => {
-  reportPanelBounds();
+onMounted(async () => {
+  await enableClickThroughOutsidePanel();
 
   window.addEventListener("resize", reportPanelBounds);
 });
@@ -566,11 +581,11 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <section ref="panelRef" class="assistant-panel">
+    <section ref="panelRef" class="assistant-panel" :class="panelPositionClass">
       <header class="top-bar">
         <div class="drag-area">
           <div class="status-dot" :class="{ active: isLive }"></div>
-          <span>Screen Analysis Panel</span>
+          <span>Screen Analysis</span>
         </div>
 
         <button @click="minimizeApp">_</button>
@@ -579,20 +594,20 @@ onBeforeUnmount(() => {
 
       <main class="panel-content">
         <button v-if="!isLive" class="primary-btn full-width" @click="selectScreen">
-          Select Screen / Window
+          Select Screen
         </button>
 
         <button v-else class="secondary-btn full-width" @click="stopScreen">
-          Stop Screen Access
+          Stop Access
         </button>
 
         <div class="button-row">
-          <button :disabled="!isLive || isDrawMode" class="primary-btn" @click="enterDrawMode">
-            {{ isDrawMode ? "Drawing..." : "Draw / Edit Boxes" }}
+          <button :disabled="!isLive" class="primary-btn" @click="enterDrawMode">
+            Draw / Edit
           </button>
 
           <button :disabled="!isLive || !isDrawMode" class="primary-btn" @click="finishDrawing">
-            Finish Drawing
+            Finish
           </button>
         </div>
 
@@ -612,17 +627,47 @@ onBeforeUnmount(() => {
           </label>
 
           <button v-if="!timerRunning" :disabled="!isLive" @click="startTimer">
-            Start Timer
+            Start
           </button>
 
           <button v-else @click="stopTimer">
-            Stop Timer
+            Stop
           </button>
         </div>
 
         <button @click="toggleAlwaysOnTop">
-          Always On Top: {{ alwaysOnTop ? "On" : "Off" }}
+          Top: {{ alwaysOnTop ? "On" : "Off" }}
         </button>
+
+        <div class="position-row">
+          <button
+            :class="{ selectedPosition: panelPosition === 'top-left' }"
+            @click="setPanelPosition('top-left')"
+          >
+            Top Left
+          </button>
+
+          <button
+            :class="{ selectedPosition: panelPosition === 'top-right' }"
+            @click="setPanelPosition('top-right')"
+          >
+            Top Right
+          </button>
+
+          <button
+            :class="{ selectedPosition: panelPosition === 'bottom-right' }"
+            @click="setPanelPosition('bottom-right')"
+          >
+            Bottom Right
+          </button>
+
+          <button
+            :class="{ selectedPosition: panelPosition === 'bottom-left' }"
+            @click="setPanelPosition('bottom-left')"
+          >
+            Bottom Left
+          </button>
+        </div>
 
         <pre class="answer-box">{{ latestAnswer }}</pre>
 

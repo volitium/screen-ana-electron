@@ -6,8 +6,8 @@ html,
 body,
 #app {
   margin: 0;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   background: transparent;
   overflow: hidden;
   font-family: Inter, Segoe UI, Arial, sans-serif;
@@ -23,8 +23,7 @@ input {
 }
 
 .overlay-root {
-  position: fixed;
-  inset: 0;
+  position: relative;
   width: 100vw;
   height: 100vh;
   background: transparent;
@@ -33,30 +32,52 @@ input {
 }
 
 .assistant-panel {
-  position: fixed;
-  top: 18px;
-  right: 18px;
-  width: 430px;
-  max-height: calc(100vh - 36px);
+  position: absolute;
+  width: 330px;
+  height: 520px;
+  max-height: calc(100vh - 30px);
   pointer-events: auto;
-  border-radius: 22px;
+  border-radius: 18px;
   overflow: hidden;
   color: white;
-  background: rgba(8, 13, 28, 0.62);
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background: rgba(8, 13, 28, 0.58);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   z-index: 20;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-top-left {
+  top: 14px;
+  left: 14px;
+}
+
+.panel-top-right {
+  top: 14px;
+  right: 14px;
+}
+
+.panel-bottom-right {
+  right: 14px;
+  bottom: 14px;
+}
+
+.panel-bottom-left {
+  left: 14px;
+  bottom: 14px;
 }
 
 .top-bar {
-  height: 48px;
+  height: 40px;
+  min-height: 40px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px 8px 14px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  gap: 7px;
+  padding: 7px 8px 7px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
 }
 
 .drag-area {
@@ -64,9 +85,9 @@ input {
   height: 100%;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 13px;
   -webkit-app-region: drag;
 }
 
@@ -77,25 +98,25 @@ input {
 }
 
 .status-dot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   background: #64748b;
 }
 
 .status-dot.active {
   background: #22c55e;
-  box-shadow: 0 0 12px rgba(34, 197, 94, 0.9);
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.9);
 }
 
 button {
-  border: 1px solid rgba(148, 163, 184, 0.26);
-  border-radius: 11px;
-  padding: 8px 11px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+  padding: 7px 9px;
   color: white;
   background: rgba(30, 41, 59, 0.72);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -119,15 +140,17 @@ button:disabled {
 .panel-content {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
-  overflow-y: auto;
-  max-height: calc(100vh - 84px);
+  gap: 9px;
+  padding: 10px;
+  height: calc(520px - 40px);
+  max-height: calc(100vh - 70px);
+  overflow: hidden;
+  min-height: 0;
 }
 
 .primary-btn {
   background: rgba(37, 99, 235, 0.92);
-  border-color: rgba(96, 165, 250, 0.8);
+  border-color: rgba(96, 165, 250, 0.75);
 }
 
 .primary-btn:hover:not(:disabled) {
@@ -146,67 +169,111 @@ button:disabled {
 .timer-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 7px;
   align-items: center;
+  flex-shrink: 0;
+}
+
+.position-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.position-row button {
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.selectedPosition {
+  background: rgba(37, 99, 235, 0.92);
+  border-color: rgba(147, 197, 253, 0.9);
 }
 
 .timer-row label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   color: rgba(255, 255, 255, 0.86);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 input {
-  width: 62px;
-  padding: 7px;
-  border-radius: 9px;
+  width: 52px;
+  padding: 6px;
+  border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.32);
   color: white;
   background: rgba(15, 23, 42, 0.72);
+  font-size: 12px;
 }
 
 .answer-box {
-  min-height: 105px;
-  max-height: 190px;
+  min-height: 78px;
+  height: 78px;
+  max-height: 78px;
   overflow: auto;
   white-space: pre-wrap;
-  padding: 12px;
+  padding: 10px;
   margin: 0;
-  border-radius: 15px;
+  border-radius: 13px;
   color: #e5e7eb;
   background: rgba(2, 6, 23, 0.5);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  font-size: 13px;
-  line-height: 1.45;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  font-size: 12px;
+  line-height: 1.4;
+  flex-shrink: 0;
 }
 
 .box-results {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
+  padding-right: 4px;
+}
+
+.box-results::-webkit-scrollbar,
+.answer-box::-webkit-scrollbar {
+  width: 7px;
+}
+
+.box-results::-webkit-scrollbar-track,
+.answer-box::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.25);
+  border-radius: 999px;
+}
+
+.box-results::-webkit-scrollbar-thumb,
+.answer-box::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.55);
+  border-radius: 999px;
 }
 
 .box-result-card {
-  padding: 10px;
-  border-radius: 14px;
+  padding: 9px;
+  border-radius: 13px;
   background: rgba(15, 23, 42, 0.48);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  font-size: 13px;
-  line-height: 1.4;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  font-size: 12px;
+  line-height: 1.35;
+  flex-shrink: 0;
 }
 
 .box-result-card p {
-  margin: 5px 0;
+  margin: 4px 0;
 }
 
 .box-result-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: 7px;
+  margin-bottom: 5px;
 }
 
 .small-actions {
@@ -215,8 +282,8 @@ input {
 }
 
 .small-actions button {
-  padding: 5px 8px;
-  font-size: 12px;
+  padding: 5px 7px;
+  font-size: 11px;
 }
 
 .error-text {
@@ -225,10 +292,8 @@ input {
 }
 
 .draw-layer {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  width: 100vw;
-  height: 100vh;
   z-index: 10;
   pointer-events: auto;
   cursor: crosshair;
@@ -237,10 +302,10 @@ input {
 }
 
 .frozen-screen {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   object-fit: fill;
   opacity: 0.82;
   user-select: none;
@@ -248,7 +313,7 @@ input {
 }
 
 .draw-mode-banner {
-  position: fixed;
+  position: absolute;
   top: 20px;
   left: 50%;
   transform: translateX(-50%);
@@ -265,7 +330,7 @@ input {
 }
 
 .box-display-layer {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 5;
   pointer-events: none;
