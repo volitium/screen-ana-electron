@@ -10,21 +10,25 @@ defineProps<{
 defineEmits<{
   capture: [];
   refresh: [];
-  autoBox: [];
   toggleAlwaysOnTop: [];
   toggleTheme: [];
   updateInterval: [value: number];
   startInterval: [];
   stopInterval: [];
+  minimize: [];
+  close: [];
 }>();
 </script>
 
 <template>
   <header class="toolbar">
+    <div class="toolbar-drag">
+      <span class="app-title">Screen Analysis Overlay</span>
+    </div>
+
     <div class="toolbar-left">
       <button @click="$emit('capture')">Select Screen / Window</button>
-      <button :disabled="!hasImage" @click="$emit('refresh')">Refresh Capture</button>
-      <button :disabled="!hasImage" @click="$emit('autoBox')">AI Auto Box Mock</button>
+      <button :disabled="!hasImage" @click="$emit('refresh')">Refresh</button>
     </div>
 
     <div class="toolbar-right">
@@ -32,7 +36,8 @@ defineEmits<{
         Interval
         <input
           type="number"
-          min="1"
+          min="0.5"
+          step="0.5"
           :value="captureIntervalSeconds"
           @input="$emit('updateInterval', Number(($event.target as HTMLInputElement).value))"
         />
@@ -40,20 +45,23 @@ defineEmits<{
       </label>
 
       <button v-if="!isIntervalRunning" :disabled="!hasImage" @click="$emit('startInterval')">
-        Start Interval
+        Start Live
       </button>
 
       <button v-else @click="$emit('stopInterval')">
-        Stop Interval
+        Stop Live
       </button>
 
       <button @click="$emit('toggleAlwaysOnTop')">
-        Always On Top: {{ alwaysOnTop ? "On" : "Off" }}
+        Top: {{ alwaysOnTop ? "On" : "Off" }}
       </button>
 
       <button @click="$emit('toggleTheme')">
-        Theme: {{ theme }}
+        {{ theme === "dark" ? "Light" : "Dark" }}
       </button>
+
+      <button @click="$emit('minimize')">_</button>
+      <button class="danger-btn" @click="$emit('close')">X</button>
     </div>
   </header>
 </template>

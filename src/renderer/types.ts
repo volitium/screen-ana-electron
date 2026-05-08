@@ -1,10 +1,3 @@
-export type CaptureSource = {
-  id: string;
-  name: string;
-  thumbnail: string;
-  appIcon: string | null;
-};
-
 export type AnalysisResult = {
   result: string;
   confidance?: string;
@@ -12,36 +5,52 @@ export type AnalysisResult = {
   meta?: string;
 };
 
-export type BoxItem = {
+export type ScreenBox = {
   id: number;
   label: string;
   x: number;
   y: number;
   width: number;
   height: number;
-  color: string;
-  borderWidth: number;
-  opacity: number;
   loading: boolean;
   error: string | null;
   result: AnalysisResult | null;
 };
 
+export type OverlaySize = {
+  width: number;
+  height: number;
+};
+
+export type DrawPayload = {
+  frozenImageDataUrl: string;
+  boxes: ScreenBox[];
+};
+
+export type DrawState = {
+  isDrawMode: boolean;
+  payload: DrawPayload | null;
+};
+
 declare global {
   interface Window {
     electronAPI: {
-      getCaptureSources: () => Promise<CaptureSource[]>;
-      getSourceImage: (sourceId: string) => Promise<string>;
       setAlwaysOnTop: (value: boolean) => Promise<boolean>;
-      cropDataUrl: (
-  imageDataUrl: string,
-  box: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  }
-) => Promise<string>;
+      minimizeWindow: () => Promise<void>;
+      closeWindow: () => Promise<void>;
+
+      getOverlaySize: () => Promise<OverlaySize>;
+
+      startDraw: (payload: DrawPayload) => Promise<void>;
+      finishDraw: (boxes: ScreenBox[]) => Promise<void>;
+      getDrawState: () => Promise<DrawState>;
+
+      setOverlayBoxes: (boxes: ScreenBox[]) => Promise<void>;
+      sendBoxesToPanel: (boxes: ScreenBox[]) => Promise<void>;
+      screenStopped: () => Promise<void>;
+
+      onOverlaySetBoxes: (callback: (boxes: ScreenBox[]) => void) => () => void;
+      onPanelBoxesUpdated: (callback: (boxes: ScreenBox[]) => void) => () => void;
     };
   }
 }

@@ -1,93 +1,189 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import Toolbar from "./components/Toolbar.vue";
-import CaptureSourceModal from "./components/CaptureSourceModal.vue";
-import ImageBoxCanvas from "./components/ImageBoxCanvas.vue";
-import ResultsPanel from "./components/ResultsPanel.vue";
-import type { BoxItem, CaptureSource } from "./types";
+import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import type { ScreenBox } from "./types";
 import { analyzeImageRegion } from "./api/analysisApi";
 
-const imageDataUrl = ref<string>("");
-const boxes = ref<BoxItem[]>([]);
-const nextBoxId = ref(1);
+const videoRef = ref<HTMLVideoElement | null>(null);
 
-const showSources = ref(false);
-const captureSources = ref<CaptureSource[]>([]);
-const selectedSourceId = ref<string>("");
-const theme = ref<"dark" | "light">("dark");
-const alwaysOnTop = ref(false);
-const captureIntervalSeconds = ref(10);
+const stream = ref<MediaStream | null>(null);
+const isLive = ref(false);
+const isAnalyzing = ref(false);
+const alwaysOnTop = ref(true);
+
+const intervalSeconds = ref(60);
+const timerRunning = ref(false);
 const intervalHandle = ref<number | null>(null);
 
-const appClass = computed(() => {
-  return theme.value === "dark" ? "app app-dark" : "app app-light";
-});
+const latestAnswer = ref("Select a screen to begin.");
 
-async function openCaptureSources(): Promise<void> {
-  captureSources.value = await window.electronAPI.getCaptureSources();
-  showSources.value = true;
+const boxes = ref<ScreenBox[]>([]);
+
+async function selectScreen(): Promise<void> {
+  try {
+    const mediaStream = await navigator.mediaDevices.getDisplayMedia({
+      audio: false,
+      video: {
+        frameRate: 15,
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    });
+
+    stream.value = mediaStream;
+
+    await nextTick();
+
+    if (videoRef.value) {
+      videoRef.value.srcObject = mediaStream;
+      await videoRef.value.play();
+    }
+
+    boxes.value = [];
+    isLive.value = true;
+    latestAnswer.value = "Screen connected. Click Draw / Edit Boxes to freeze and select areas.";
+
+    await window.electronAPI.setOverlayBoxes([]);
+
+    mediaStream.getVideoTracks()[0].addEventListener("ended", () => {
+      stopScreen();
+    });
+  } catch {
+    latestAnswer.value = "Screen selection was cancelled or failed.";
+  }
 }
 
-async function selectSource(source: CaptureSource): Promise<void> {
-  selectedSourceId.value = source.id;
-  imageDataUrl.value = await window.electronAPI.getSourceImage(source.id);
+async function stopScreen(): Promise<void> {
+  stopTimer();
+
+  if (stream.value) {
+    for (const track of stream.value.getTracks()) {
+      track.stop();
+    }
+  }
+
+  stream.value = null;
+  isLive.value = false;
   boxes.value = [];
-  nextBoxId.value = 1;
-  showSources.value = false;
+  latestAnswer.value = "Screen access stopped.";
+
+  await window.electronAPI.screenStopped();
 }
 
-async function refreshCapture(): Promise<void> {
-  if (!selectedSourceId.value) {
-    await openCaptureSources();
+function captureWholeFrameCanvas(): HTMLCanvasElement | null {
+  const video = videoRef.value;
+
+  if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
+    return null;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    return null;
+  }
+
+  context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  return canvas;
+}
+
+function captureWholeFrameDataUrl(): string | null {
+  const canvas = captureWholeFrameCanvas();
+
+  if (!canvas) {
+    return null;
+  }
+
+  return canvas.toDataURL("image/jpeg", 0.76);
+}
+
+async function enterDrawMode(): Promise<void> {
+  if (!isLive.value) {
+    latestAnswer.value = "Select a screen first.";
     return;
   }
 
-  imageDataUrl.value = await window.electronAPI.getSourceImage(selectedSourceId.value);
+  const frame = captureWholeFrameDataUrl();
 
-  for (const box of boxes.value) {
-    await runAnalysis(box.id);
+  if (!frame) {
+    latestAnswer.value = "Could not freeze screen yet. Try again in a second.";
+    return;
   }
-}
 
-function addBox(box: Omit<BoxItem, "id" | "label" | "loading" | "error" | "result">): void {
-  const id = nextBoxId.value;
+  latestAnswer.value = "Drawing screen opened. Draw, move, resize, or delete boxes.";
 
-  boxes.value.push({
-    id,
-    label: "Box " + id,
-    x: box.x,
-    y: box.y,
-    width: box.width,
-    height: box.height,
-    color: box.color,
-    borderWidth: box.borderWidth,
-    opacity: box.opacity,
-    loading: false,
-    error: null,
-    result: null
+  await window.electronAPI.startDraw({
+    frozenImageDataUrl: frame,
+    boxes: boxes.value
   });
-
-  nextBoxId.value += 1;
-  runAnalysis(id);
 }
 
-function updateBox(updatedBox: BoxItem): void {
-  const index = boxes.value.findIndex((box) => box.id === updatedBox.id);
-
-  if (index !== -1) {
-    boxes.value[index] = updatedBox;
-    runAnalysis(updatedBox.id);
-  }
-}
-
-function deleteBox(id: number): void {
+async function deleteBox(id: number): Promise<void> {
   boxes.value = boxes.value.filter((box) => box.id !== id);
+  await window.electronAPI.setOverlayBoxes(boxes.value);
 }
 
-async function runAnalysis(id: number): Promise<void> {
+async function cropBoxFromCurrentFrame(box: ScreenBox): Promise<string | null> {
+  const videoCanvas = captureWholeFrameCanvas();
+
+  if (!videoCanvas) {
+    return null;
+  }
+
+  const overlaySize = await window.electronAPI.getOverlaySize();
+
+  if (overlaySize.width === 0 || overlaySize.height === 0) {
+    return null;
+  }
+
+  const scaleX = videoCanvas.width / overlaySize.width;
+  const scaleY = videoCanvas.height / overlaySize.height;
+
+  const cropX = Math.round(box.x * scaleX);
+  const cropY = Math.round(box.y * scaleY);
+  const cropWidth = Math.round(box.width * scaleX);
+  const cropHeight = Math.round(box.height * scaleY);
+
+  const cropCanvas = document.createElement("canvas");
+  cropCanvas.width = cropWidth;
+  cropCanvas.height = cropHeight;
+
+  const context = cropCanvas.getContext("2d");
+
+  if (!context) {
+    return null;
+  }
+
+  context.drawImage(
+    videoCanvas,
+    cropX,
+    cropY,
+    cropWidth,
+    cropHeight,
+    0,
+    0,
+    cropWidth,
+    cropHeight
+  );
+
+  return cropCanvas.toDataURL("image/jpeg", 0.74);
+}
+
+async function analyzeSingleBox(id: number): Promise<void> {
   const box = boxes.value.find((item) => item.id === id);
 
-  if (!box || !imageDataUrl.value) {
+  if (!box || !isLive.value) {
+    return;
+  }
+
+  const croppedImage = await cropBoxFromCurrentFrame(box);
+
+  if (!croppedImage) {
+    box.error = "Could not capture selected region.";
     return;
   }
 
@@ -95,18 +191,66 @@ async function runAnalysis(id: number): Promise<void> {
   box.error = null;
 
   try {
-    const croppedImage = await window.electronAPI.cropDataUrl(imageDataUrl.value, {
-      x: box.x,
-      y: box.y,
-      width: box.width,
-      height: box.height
-    });
     box.result = await analyzeImageRegion(croppedImage);
   } catch (error) {
-    box.error = error instanceof Error ? error.message : "Unknown API error";
+    box.error = error instanceof Error ? error.message : "Analysis failed.";
   } finally {
     box.loading = false;
   }
+
+  await window.electronAPI.setOverlayBoxes(boxes.value);
+}
+
+async function analyzeAll(): Promise<void> {
+  if (!isLive.value || isAnalyzing.value) {
+    return;
+  }
+
+  isAnalyzing.value = true;
+
+  try {
+    if (boxes.value.length === 0) {
+      latestAnswer.value = "No boxes selected. Click Draw / Edit Boxes first.";
+      return;
+    }
+
+    latestAnswer.value = "Analyzing all boxes...";
+
+    for (const box of boxes.value) {
+      await analyzeSingleBox(box.id);
+    }
+
+    latestAnswer.value = "All boxes analyzed.";
+  } catch (error) {
+    latestAnswer.value = error instanceof Error ? error.message : "Analysis failed.";
+  } finally {
+    isAnalyzing.value = false;
+  }
+}
+
+function startTimer(): void {
+  stopTimer();
+
+  if (!isLive.value) {
+    latestAnswer.value = "Select a screen first.";
+    return;
+  }
+
+  timerRunning.value = true;
+  latestAnswer.value = `Auto analysis started: every ${intervalSeconds.value} seconds.`;
+
+  intervalHandle.value = window.setInterval(() => {
+    analyzeAll();
+  }, Math.max(intervalSeconds.value, 1) * 1000);
+}
+
+function stopTimer(): void {
+  if (intervalHandle.value !== null) {
+    clearInterval(intervalHandle.value);
+    intervalHandle.value = null;
+  }
+
+  timerRunning.value = false;
 }
 
 async function toggleAlwaysOnTop(): Promise<void> {
@@ -114,95 +258,133 @@ async function toggleAlwaysOnTop(): Promise<void> {
   await window.electronAPI.setAlwaysOnTop(alwaysOnTop.value);
 }
 
-function toggleTheme(): void {
-  theme.value = theme.value === "dark" ? "light" : "dark";
+function minimizeApp(): void {
+  window.electronAPI.minimizeWindow();
 }
 
-function startIntervalCapture(): void {
-  stopIntervalCapture();
-
-  intervalHandle.value = window.setInterval(() => {
-    refreshCapture();
-  }, captureIntervalSeconds.value * 1000);
+function closeApp(): void {
+  stopScreen();
+  window.electronAPI.closeWindow();
 }
 
-function stopIntervalCapture(): void {
-  if (intervalHandle.value !== null) {
-    clearInterval(intervalHandle.value);
-    intervalHandle.value = null;
-  }
-}
-
-function autoBoxMock(): void {
-  if (!imageDataUrl.value) {
-    return;
-  }
-
-  addBox({
-    x: 80,
-    y: 80,
-    width: 260,
-    height: 160,
-    color: "#40a9ff",
-    borderWidth: 2,
-    opacity: 0.25
+onMounted(() => {
+  const cleanupPanelBoxes = window.electronAPI.onPanelBoxesUpdated((updatedBoxes) => {
+    boxes.value = structuredClone(updatedBoxes);
+    window.electronAPI.setOverlayBoxes(boxes.value);
+    latestAnswer.value = "Boxes updated. You can interact with Chrome/Zoom now.";
   });
 
-  addBox({
-    x: 400,
-    y: 140,
-    width: 320,
-    height: 180,
-    color: "#ff4d4f",
-    borderWidth: 2,
-    opacity: 0.25
+  onBeforeUnmount(() => {
+    cleanupPanelBoxes();
   });
-}
+});
+
+onBeforeUnmount(() => {
+  stopTimer();
+
+  if (stream.value) {
+    for (const track of stream.value.getTracks()) {
+      track.stop();
+    }
+  }
+});
 </script>
 
 <template>
-  <div :class="appClass">
-    <Toolbar
-      :has-image="Boolean(imageDataUrl)"
-      :always-on-top="alwaysOnTop"
-      :theme="theme"
-      :capture-interval-seconds="captureIntervalSeconds"
-      :is-interval-running="intervalHandle !== null"
-      @capture="openCaptureSources"
-      @refresh="refreshCapture"
-      @auto-box="autoBoxMock"
-      @toggle-always-on-top="toggleAlwaysOnTop"
-      @toggle-theme="toggleTheme"
-      @update-interval="captureIntervalSeconds = $event"
-      @start-interval="startIntervalCapture"
-      @stop-interval="stopIntervalCapture"
-    />
+  <div class="panel-root">
+    <video ref="videoRef" class="hidden-video" muted playsinline></video>
 
-    <main class="main-layout">
-      <section class="viewer-pane">
-        <ImageBoxCanvas
-          :image-data-url="imageDataUrl"
-          :boxes="boxes"
-          @add-box="addBox"
-          @update-box="updateBox"
-          @delete-box="deleteBox"
-        />
-      </section>
+    <section class="assistant-panel">
+      <header class="top-bar">
+        <div class="drag-area">
+          <div class="status-dot" :class="{ active: isLive }"></div>
+          <span>Screen Analysis Panel</span>
+        </div>
 
-      <section class="results-pane">
-        <ResultsPanel
-          :boxes="boxes"
-          @delete-box="deleteBox"
-          @reanalyze="runAnalysis"
-        />
-      </section>
-    </main>
+        <button @click="minimizeApp">_</button>
+        <button class="danger" @click="closeApp">X</button>
+      </header>
 
-    <CaptureSourceModal
-      v-if="showSources"
-      :sources="captureSources"
-      @select="selectSource"
-      @close="showSources = false"
-    />
+      <main class="panel-content">
+        <button v-if="!isLive" class="primary-btn full-width" @click="selectScreen">
+          Select Screen / Window
+        </button>
+
+        <button v-else class="secondary-btn full-width" @click="stopScreen">
+          Stop Screen Access
+        </button>
+
+        <button :disabled="!isLive" class="primary-btn full-width" @click="enterDrawMode">
+          Draw / Edit Boxes
+        </button>
+
+        <button
+          :disabled="!isLive || isAnalyzing"
+          class="primary-btn full-width"
+          @click="analyzeAll"
+        >
+          {{ isAnalyzing ? "Analyzing..." : "Analyze All" }}
+        </button>
+
+        <div class="timer-row">
+          <label>
+            Every
+            <input v-model.number="intervalSeconds" type="number" min="1" step="1" />
+            sec
+          </label>
+
+          <button v-if="!timerRunning" :disabled="!isLive" @click="startTimer">
+            Start Timer
+          </button>
+
+          <button v-else @click="stopTimer">
+            Stop Timer
+          </button>
+        </div>
+
+        <button @click="toggleAlwaysOnTop">
+          Always On Top: {{ alwaysOnTop ? "On" : "Off" }}
+        </button>
+
+        <pre class="answer-box">{{ latestAnswer }}</pre>
+
+        <section v-if="boxes.length > 0" class="box-results">
+          <div v-for="box in boxes" :key="box.id" class="box-result-card">
+            <div class="box-result-header">
+              <strong>{{ box.label }}</strong>
+
+              <div class="small-actions">
+                <button :disabled="box.loading" @click="analyzeSingleBox(box.id)">
+                  Analyze
+                </button>
+                <button class="danger-small" @click="deleteBox(box.id)">Delete</button>
+              </div>
+            </div>
+
+            <p>
+              Region:
+              x={{ Math.round(box.x) }},
+              y={{ Math.round(box.y) }},
+              w={{ Math.round(box.width) }},
+              h={{ Math.round(box.height) }}
+            </p>
+
+            <p v-if="box.loading">Analyzing...</p>
+
+            <p v-else-if="box.error" class="error-text">
+              {{ box.error }}
+            </p>
+
+            <div v-else-if="box.result">
+              <p>Result: {{ box.result.result }}</p>
+              <p>Confidence: {{ box.result.confidance || box.result.confidence || "N/A" }}</p>
+              <p>Meta: {{ box.result.meta || "N/A" }}</p>
+            </div>
+
+            <p v-else>No result yet.</p>
+          </div>
+        </section>
+      </main>
+    </section>
   </div>
 </template>
