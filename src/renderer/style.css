@@ -22,16 +22,21 @@ input {
   display: none;
 }
 
-.panel-root {
+.overlay-root {
+  position: relative;
   width: 100vw;
   height: 100vh;
   background: transparent;
   overflow: hidden;
+  pointer-events: none;
 }
 
 .assistant-panel {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 430px;
+  max-height: calc(100vh - 36px);
   pointer-events: auto;
   border-radius: 22px;
   overflow: hidden;
@@ -41,6 +46,7 @@ input {
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+  z-index: 20;
 }
 
 .top-bar {
@@ -115,7 +121,7 @@ button:disabled {
   gap: 12px;
   padding: 14px;
   overflow-y: auto;
-  max-height: calc(100vh - 48px);
+  max-height: calc(100vh - 84px);
 }
 
 .primary-btn {
@@ -135,6 +141,7 @@ button:disabled {
   width: 100%;
 }
 
+.button-row,
 .timer-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -214,4 +221,115 @@ input {
 .error-text {
   color: #f87171;
   font-weight: 700;
+}
+
+.draw-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: auto;
+  cursor: crosshair;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.frozen-screen {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  opacity: 0.82;
+  user-select: none;
+  pointer-events: none;
+}
+
+.draw-mode-banner {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  padding: 13px 20px;
+  border-radius: 14px;
+  background: rgba(220, 38, 38, 0.98);
+  color: white;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.42);
+}
+
+.box-display-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.screen-box {
+  position: absolute;
+  border: 3px solid #60a5fa;
+  background: rgba(96, 165, 250, 0.16);
+  border-radius: 8px;
+  cursor: move;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.24),
+    0 10px 24px rgba(0, 0, 0, 0.24);
+  z-index: 11;
+}
+
+.screen-box.selected {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.16);
+}
+
+.passive-box {
+  pointer-events: none;
+}
+
+.screen-box-label {
+  position: absolute;
+  left: 0;
+  top: -32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.98);
+  color: white;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.screen-box-label button {
+  padding: 1px 5px;
+  font-size: 11px;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.95);
+  border: none;
+}
+
+.resize-handle {
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 2px solid #0f172a;
+  cursor: nwse-resize;
+}
+
+.draft-box {
+  position: absolute;
+  border: 3px dashed #93c5fd;
+  background: rgba(147, 197, 253, 0.2);
+  border-radius: 8px;
+  z-index: 11;
+  pointer-events: none;
 }

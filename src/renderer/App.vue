@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import type { ScreenBox } from "./types";
 import { analyzeImageRegion } from "./api/analysisApi";
 
 const videoRef = ref<HTMLVideoElement | null>(null);
+const drawLayerRef = ref<HTMLDivElement | null>(null);
+const panelRef = ref<HTMLElement | null>(null);
 
 const stream = ref<MediaStream | null>(null);
 const isLive = ref(false);
@@ -17,9 +19,61 @@ const intervalHandle = ref<number | null>(null);
 const latestAnswer = ref("Select a screen to begin.");
 
 const boxes = ref<ScreenBox[]>([]);
+const nextBoxId = ref(1);
+
+const isDrawMode = ref(false);
+const frozenImageDataUrl = ref("");
+
+const isDrawing = ref(false);
+const startX = ref(0);
+const startY = ref(0);
+const currentX = ref(0);
+const currentY = ref(0);
+
+const draggingBoxId = ref<number | null>(null);
+const resizingBoxId = ref<number | null>(null);
+const selectedBoxId = ref<number | null>(null);
+const dragOffsetX = ref(0);
+const dragOffsetY = ref(0);
+
+const draftBoxStyle = computed(() => {
+  const x = Math.min(startX.value, currentX.value);
+  const y = Math.min(startY.value, currentY.value);
+  const width = Math.abs(currentX.value - startX.value);
+  const height = Math.abs(currentY.value - startY.value);
+
+  return {
+    left: x + "px",
+    top: y + "px",
+    width: width + "px",
+    height: height + "px"
+  };
+});
+
+async function reportPanelBounds(): Promise<void> {
+  await nextTick();
+
+  const panel = panelRef.value;
+
+  if (!panel) {
+    return;
+  }
+
+  const rect = panel.getBoundingClientRect();
+
+  await window.electronAPI.setPanelBounds({
+    x: rect.left,
+    y: rect.top,
+    width: rect.width,
+    height: rect.height
+  });
+}
 
 async function selectScreen(): Promise<void> {
   try {
+    await window.electronAPI.setBrowserInteractionMode(false);
+    await window.electronAPI.setDrawingMode(false);
+
     const mediaStream = await navigator.mediaDevices.getDisplayMedia({
       audio: false,
       video: {
@@ -39,14 +93,15 @@ async function selectScreen(): Promise<void> {
     }
 
     boxes.value = [];
+    nextBoxId.value = 1;
     isLive.value = true;
-    latestAnswer.value = "Screen connected. Click Draw / Edit Boxes to freeze and select areas.";
-
-    await window.electronAPI.setOverlayBoxes([]);
+    latestAnswer.value = "Screen connected. Click Draw / Edit Boxes.";
 
     mediaStream.getVideoTracks()[0].addEventListener("ended", () => {
       stopScreen();
     });
+
+    await reportPanelBounds();
   } catch {
     latestAnswer.value = "Screen selection was cancelled or failed.";
   }
@@ -64,9 +119,13 @@ async function stopScreen(): Promise<void> {
   stream.value = null;
   isLive.value = false;
   boxes.value = [];
+  nextBoxId.value = 1;
+  isDrawMode.value = false;
+  frozenImageDataUrl.value = "";
   latestAnswer.value = "Screen access stopped.";
 
-  await window.electronAPI.screenStopped();
+  await window.electronAPI.setDrawingMode(false);
+  await window.electronAPI.setBrowserInteractionMode(false);
 }
 
 function captureWholeFrameCanvas(): HTMLCanvasElement | null {
@@ -114,17 +173,174 @@ async function enterDrawMode(): Promise<void> {
     return;
   }
 
-  latestAnswer.value = "Drawing screen opened. Draw, move, resize, or delete boxes.";
+  frozenImageDataUrl.value = frame;
+  isDrawMode.value = true;
+  latestAnswer.value = "Draw mode active. Draw, move, resize, or delete boxes.";
 
-  await window.electronAPI.startDraw({
-    frozenImageDataUrl: frame,
-    boxes: boxes.value
-  });
+  await window.electronAPI.setBrowserInteractionMode(false);
+  await window.electronAPI.setDrawingMode(true);
 }
 
-async function deleteBox(id: number): Promise<void> {
+async function finishDrawing(): Promise<void> {
+  isDrawMode.value = false;
+  frozenImageDataUrl.value = "";
+  isDrawing.value = false;
+  draggingBoxId.value = null;
+  resizingBoxId.value = null;
+
+  latestAnswer.value =
+    "Drawing finished. Chrome/Zoom is clickable outside the panel. The panel remains clickable.";
+
+  await reportPanelBounds();
+  await window.electronAPI.setDrawingMode(false);
+  await window.electronAPI.setBrowserInteractionMode(true);
+}
+
+function getPointerPosition(event: MouseEvent): { x: number; y: number } {
+  const rect = drawLayerRef.value?.getBoundingClientRect();
+
+  if (!rect) {
+    return { x: 0, y: 0 };
+  }
+
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top
+  };
+}
+
+function onDrawMouseDown(event: MouseEvent): void {
+  if (!isDrawMode.value) {
+    return;
+  }
+
+  const target = event.target as HTMLElement;
+
+  if (target.closest(".screen-box") || target.closest(".assistant-panel")) {
+    return;
+  }
+
+  const pos = getPointerPosition(event);
+
+  isDrawing.value = true;
+  startX.value = pos.x;
+  startY.value = pos.y;
+  currentX.value = pos.x;
+  currentY.value = pos.y;
+}
+
+function onDrawMouseMove(event: MouseEvent): void {
+  if (!isDrawMode.value) {
+    return;
+  }
+
+  const pos = getPointerPosition(event);
+
+  if (isDrawing.value) {
+    currentX.value = pos.x;
+    currentY.value = pos.y;
+    return;
+  }
+
+  if (draggingBoxId.value !== null) {
+    const box = boxes.value.find((item) => item.id === draggingBoxId.value);
+
+    if (!box || !drawLayerRef.value) {
+      return;
+    }
+
+    const maxX = drawLayerRef.value.clientWidth - box.width;
+    const maxY = drawLayerRef.value.clientHeight - box.height;
+
+    box.x = clamp(pos.x - dragOffsetX.value, 0, maxX);
+    box.y = clamp(pos.y - dragOffsetY.value, 0, maxY);
+  }
+
+  if (resizingBoxId.value !== null) {
+    const box = boxes.value.find((item) => item.id === resizingBoxId.value);
+
+    if (!box || !drawLayerRef.value) {
+      return;
+    }
+
+    box.width = clamp(pos.x - box.x, 40, drawLayerRef.value.clientWidth - box.x);
+    box.height = clamp(pos.y - box.y, 40, drawLayerRef.value.clientHeight - box.y);
+  }
+}
+
+function onDrawMouseUp(): void {
+  if (isDrawing.value) {
+    const x = Math.min(startX.value, currentX.value);
+    const y = Math.min(startY.value, currentY.value);
+    const width = Math.abs(currentX.value - startX.value);
+    const height = Math.abs(currentY.value - startY.value);
+
+    if (width > 40 && height > 40) {
+      const id = nextBoxId.value;
+
+      boxes.value.push({
+        id,
+        label: "Box " + id,
+        x,
+        y,
+        width,
+        height,
+        loading: false,
+        error: null,
+        result: null
+      });
+
+      selectedBoxId.value = id;
+      nextBoxId.value += 1;
+    }
+  }
+
+  isDrawing.value = false;
+  draggingBoxId.value = null;
+  resizingBoxId.value = null;
+}
+
+function startDragging(event: MouseEvent, box: ScreenBox): void {
+  if (!isDrawMode.value) {
+    return;
+  }
+
+  event.stopPropagation();
+
+  const pos = getPointerPosition(event);
+
+  selectedBoxId.value = box.id;
+  draggingBoxId.value = box.id;
+  dragOffsetX.value = pos.x - box.x;
+  dragOffsetY.value = pos.y - box.y;
+}
+
+function startResizing(event: MouseEvent, box: ScreenBox): void {
+  if (!isDrawMode.value) {
+    return;
+  }
+
+  event.stopPropagation();
+
+  selectedBoxId.value = box.id;
+  resizingBoxId.value = box.id;
+}
+
+function deleteBox(id: number): void {
   boxes.value = boxes.value.filter((box) => box.id !== id);
-  await window.electronAPI.setOverlayBoxes(boxes.value);
+
+  if (selectedBoxId.value === id) {
+    selectedBoxId.value = null;
+  }
+}
+
+function getBoxStyle(box: ScreenBox): Record<string, string> {
+  return {
+    left: box.x + "px",
+    top: box.y + "px",
+    width: box.width + "px",
+    height: box.height + "px"
+  };
 }
 
 async function cropBoxFromCurrentFrame(box: ScreenBox): Promise<string | null> {
@@ -134,14 +350,14 @@ async function cropBoxFromCurrentFrame(box: ScreenBox): Promise<string | null> {
     return null;
   }
 
-  const overlaySize = await window.electronAPI.getOverlaySize();
+  const windowSize = await window.electronAPI.getWindowSize();
 
-  if (overlaySize.width === 0 || overlaySize.height === 0) {
+  if (windowSize.width === 0 || windowSize.height === 0) {
     return null;
   }
 
-  const scaleX = videoCanvas.width / overlaySize.width;
-  const scaleY = videoCanvas.height / overlaySize.height;
+  const scaleX = videoCanvas.width / windowSize.width;
+  const scaleY = videoCanvas.height / windowSize.height;
 
   const cropX = Math.round(box.x * scaleX);
   const cropY = Math.round(box.y * scaleY);
@@ -174,6 +390,8 @@ async function cropBoxFromCurrentFrame(box: ScreenBox): Promise<string | null> {
 }
 
 async function analyzeSingleBox(id: number): Promise<void> {
+  await window.electronAPI.setBrowserInteractionMode(false);
+
   const box = boxes.value.find((item) => item.id === id);
 
   if (!box || !isLive.value) {
@@ -198,10 +416,13 @@ async function analyzeSingleBox(id: number): Promise<void> {
     box.loading = false;
   }
 
-  await window.electronAPI.setOverlayBoxes(boxes.value);
+  await reportPanelBounds();
+  await window.electronAPI.setBrowserInteractionMode(true);
 }
 
 async function analyzeAll(): Promise<void> {
+  await window.electronAPI.setBrowserInteractionMode(false);
+
   if (!isLive.value || isAnalyzing.value) {
     return;
   }
@@ -225,6 +446,8 @@ async function analyzeAll(): Promise<void> {
     latestAnswer.value = error instanceof Error ? error.message : "Analysis failed.";
   } finally {
     isAnalyzing.value = false;
+    await reportPanelBounds();
+    await window.electronAPI.setBrowserInteractionMode(true);
   }
 }
 
@@ -267,20 +490,20 @@ function closeApp(): void {
   window.electronAPI.closeWindow();
 }
 
-onMounted(() => {
-  const cleanupPanelBoxes = window.electronAPI.onPanelBoxesUpdated((updatedBoxes) => {
-    boxes.value = structuredClone(updatedBoxes);
-    window.electronAPI.setOverlayBoxes(boxes.value);
-    latestAnswer.value = "Boxes updated. You can interact with Chrome/Zoom now.";
-  });
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
 
-  onBeforeUnmount(() => {
-    cleanupPanelBoxes();
-  });
+onMounted(() => {
+  reportPanelBounds();
+
+  window.addEventListener("resize", reportPanelBounds);
 });
 
 onBeforeUnmount(() => {
   stopTimer();
+
+  window.removeEventListener("resize", reportPanelBounds);
 
   if (stream.value) {
     for (const track of stream.value.getTracks()) {
@@ -291,10 +514,57 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="panel-root">
+  <div class="overlay-root">
     <video ref="videoRef" class="hidden-video" muted playsinline></video>
 
-    <section class="assistant-panel">
+    <div
+      v-if="isDrawMode"
+      ref="drawLayerRef"
+      class="draw-layer"
+      @mousedown="onDrawMouseDown"
+      @mousemove="onDrawMouseMove"
+      @mouseup="onDrawMouseUp"
+      @mouseleave="onDrawMouseUp"
+    >
+      <img class="frozen-screen" :src="frozenImageDataUrl" alt="Frozen screen" />
+
+      <div class="draw-mode-banner">
+        DRAW MODE - DRAW, MOVE, RESIZE, OR DELETE BOXES
+      </div>
+
+      <div
+        v-for="box in boxes"
+        :key="box.id"
+        class="screen-box"
+        :class="{ selected: selectedBoxId === box.id }"
+        :style="getBoxStyle(box)"
+        @mousedown="startDragging($event, box)"
+      >
+        <div class="screen-box-label">
+          {{ box.label }}
+          <button @click.stop="deleteBox(box.id)">x</button>
+        </div>
+
+        <div class="resize-handle" @mousedown="startResizing($event, box)"></div>
+      </div>
+
+      <div v-if="isDrawing" class="draft-box" :style="draftBoxStyle"></div>
+    </div>
+
+    <div v-else class="box-display-layer">
+      <div
+        v-for="box in boxes"
+        :key="box.id"
+        class="screen-box passive-box"
+        :style="getBoxStyle(box)"
+      >
+        <div class="screen-box-label">
+          {{ box.label }}
+        </div>
+      </div>
+    </div>
+
+    <section ref="panelRef" class="assistant-panel">
       <header class="top-bar">
         <div class="drag-area">
           <div class="status-dot" :class="{ active: isLive }"></div>
@@ -314,9 +584,15 @@ onBeforeUnmount(() => {
           Stop Screen Access
         </button>
 
-        <button :disabled="!isLive" class="primary-btn full-width" @click="enterDrawMode">
-          Draw / Edit Boxes
-        </button>
+        <div class="button-row">
+          <button :disabled="!isLive" class="primary-btn" @click="enterDrawMode">
+            Draw / Edit Boxes
+          </button>
+
+          <button :disabled="!isLive || !isDrawMode" class="primary-btn" @click="finishDrawing">
+            Finish Drawing
+          </button>
+        </div>
 
         <button
           :disabled="!isLive || isAnalyzing"

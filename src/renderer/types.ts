@@ -17,19 +17,16 @@ export type ScreenBox = {
   result: AnalysisResult | null;
 };
 
-export type OverlaySize = {
+export type WindowSize = {
   width: number;
   height: number;
 };
 
-export type DrawPayload = {
-  frozenImageDataUrl: string;
-  boxes: ScreenBox[];
-};
-
-export type DrawState = {
-  isDrawMode: boolean;
-  payload: DrawPayload | null;
+export type PanelBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 };
 
 declare global {
@@ -39,18 +36,12 @@ declare global {
       minimizeWindow: () => Promise<void>;
       closeWindow: () => Promise<void>;
 
-      getOverlaySize: () => Promise<OverlaySize>;
+      setDrawingMode: (value: boolean) => Promise<boolean>;
+      setBrowserInteractionMode: (value: boolean) => Promise<boolean>;
 
-      startDraw: (payload: DrawPayload) => Promise<void>;
-      finishDraw: (boxes: ScreenBox[]) => Promise<void>;
-      getDrawState: () => Promise<DrawState>;
+      setPanelBounds: (bounds: PanelBounds) => Promise<boolean>;
 
-      setOverlayBoxes: (boxes: ScreenBox[]) => Promise<void>;
-      sendBoxesToPanel: (boxes: ScreenBox[]) => Promise<void>;
-      screenStopped: () => Promise<void>;
-
-      onOverlaySetBoxes: (callback: (boxes: ScreenBox[]) => void) => () => void;
-      onPanelBoxesUpdated: (callback: (boxes: ScreenBox[]) => void) => () => void;
+      getWindowSize: () => Promise<WindowSize>;
     };
   }
 }
