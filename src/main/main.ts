@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, session, desktopCapturer, screen } from "e
 import path from "path";
 
 let mainWindow: BrowserWindow | null = null;
+let mouseModeInterval: NodeJS.Timeout | null = null;
 
 let isDrawingMode = false;
 let browserInteractionMode = false;
@@ -16,8 +17,12 @@ type PanelBounds = {
 
 let panelBounds: PanelBounds | null = null;
 
+function isWindowUsable(): boolean {
+  return mainWindow !== null && !mainWindow.isDestroyed();
+}
+
 function setMousePassthrough(value: boolean): void {
-  if (!mainWindow) {
+  if (!isWindowUsable() || !mainWindow) {
     return;
   }
 
@@ -34,8 +39,55 @@ function setMousePassthrough(value: boolean): void {
   }
 }
 
+function lockWindowForDrawing(): void {
+  if (!isWindowUsable() || !mainWindow) {
+    return;
+  }
+
+  const display = screen.getPrimaryDisplay();
+  const bounds = display.bounds;
+
+  mainWindow.setIgnoreMouseEvents(false);
+  isMousePassthrough = false;
+
+  mainWindow.setBounds(bounds);
+  mainWindow.setResizable(false);
+  mainWindow.setMaximizable(false);
+  mainWindow.setMinimizable(false);
+  mainWindow.setFullScreenable(false);
+
+  mainWindow.setAlwaysOnTop(true, "screen-saver");
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  mainWindow.setFullScreen(true);
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.moveTop();
+}
+
+function unlockWindowAfterDrawing(): void {
+  if (!isWindowUsable() || !mainWindow) {
+    return;
+  }
+
+  const display = screen.getPrimaryDisplay();
+  const bounds = display.bounds;
+
+  mainWindow.setFullScreen(false);
+  mainWindow.setBounds(bounds);
+
+  mainWindow.setResizable(false);
+  mainWindow.setMaximizable(false);
+  mainWindow.setMinimizable(true);
+  mainWindow.setFullScreenable(false);
+
+  mainWindow.setAlwaysOnTop(true, "screen-saver");
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  mainWindow.show();
+}
+
 function forceFullScreenBounds(): void {
-  if (!mainWindow) {
+  if (!isWindowUsable() || !mainWindow) {
     return;
   }
 
@@ -51,7 +103,7 @@ function forceFullScreenBounds(): void {
 }
 
 function updateMouseMode(): void {
-  if (!mainWindow) {
+  if (!isWindowUsable() || !mainWindow) {
     return;
   }
 
@@ -89,6 +141,23 @@ function updateMouseMode(): void {
   }
 }
 
+function startMouseModeInterval(): void {
+  if (mouseModeInterval) {
+    clearInterval(mouseModeInterval);
+  }
+
+  mouseModeInterval = setInterval(() => {
+    updateMouseMode();
+  }, 80);
+}
+
+function stopMouseModeInterval(): void {
+  if (mouseModeInterval) {
+    clearInterval(mouseModeInterval);
+    mouseModeInterval = null;
+  }
+}
+
 function createMainWindow(): void {
   const display = screen.getPrimaryDisplay();
   const bounds = display.bounds;
@@ -98,15 +167,17 @@ function createMainWindow(): void {
     y: bounds.y,
     width: bounds.width,
     height: bounds.height,
-    minWidth: 900,
-    minHeight: 600,
+    minWidth: bounds.width,
+    minHeight: bounds.height,
     title: "Screen Image Analysis Tool",
     backgroundColor: "#00000000",
     transparent: true,
     frame: false,
     alwaysOnTop: true,
     hasShadow: false,
-    resizable: true,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
     skipTaskbar: false,
     focusable: true,
     webPreferences: {
@@ -119,10 +190,21 @@ function createMainWindow(): void {
   });
 
   mainWindow.setBounds(bounds);
+  mainWindow.setResizable(false);
+  mainWindow.setMaximizable(false);
+  mainWindow.setFullScreenable(false);
   mainWindow.setAlwaysOnTop(true, "screen-saver");
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   setMousePassthrough(false);
+
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+    isDrawingMode = false;
+    browserInteractionMode = false;
+    isMousePassthrough = false;
+    panelBounds = null;
+  });
 
   session.defaultSession.setDisplayMediaRequestHandler(
     async (_request, callback) => {
@@ -152,26 +234,30 @@ function createMainWindow(): void {
 
 app.whenReady().then(() => {
   createMainWindow();
-
-  setInterval(() => {
-    updateMouseMode();
-  }, 80);
+  startMouseModeInterval();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createMainWindow();
+      startMouseModeInterval();
     }
   });
 });
 
+app.on("before-quit", () => {
+  stopMouseModeInterval();
+});
+
 app.on("window-all-closed", () => {
+  stopMouseModeInterval();
+
   if (process.platform !== "darwin") {
     app.quit();
   }
 });
 
 ipcMain.handle("window:setAlwaysOnTop", (_event, value: boolean) => {
-  if (!mainWindow) {
+  if (!isWindowUsable() || !mainWindow) {
     return false;
   }
 
@@ -180,11 +266,25 @@ ipcMain.handle("window:setAlwaysOnTop", (_event, value: boolean) => {
 });
 
 ipcMain.handle("window:minimize", () => {
-  mainWindow?.minimize();
+  if (!isWindowUsable() || !mainWindow) {
+    return false;
+  }
+
+  if (isDrawingMode) {
+    return false;
+  }
+
+  mainWindow.minimize();
+  return true;
 });
 
 ipcMain.handle("window:close", () => {
-  mainWindow?.close();
+  if (!isWindowUsable() || !mainWindow) {
+    return false;
+  }
+
+  mainWindow.close();
+  return true;
 });
 
 ipcMain.handle("window:setDrawingMode", (_event, value: boolean) => {
@@ -192,7 +292,9 @@ ipcMain.handle("window:setDrawingMode", (_event, value: boolean) => {
 
   if (value) {
     browserInteractionMode = false;
-    forceFullScreenBounds();
+    lockWindowForDrawing();
+  } else {
+    unlockWindowAfterDrawing();
   }
 
   updateMouseMode();
@@ -217,7 +319,7 @@ ipcMain.handle("window:forceFullScreenBounds", () => {
 });
 
 ipcMain.handle("window:getSize", () => {
-  if (!mainWindow) {
+  if (!isWindowUsable() || !mainWindow) {
     return {
       width: 0,
       height: 0

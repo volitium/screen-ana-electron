@@ -208,7 +208,7 @@ async function finishDrawing(): Promise<void> {
   resizingBoxId.value = null;
 
   latestAnswer.value =
-    "Drawing finished. Tab is clickable outside the panel. The panel remains clickable.";
+    "Drawing finished. Chrome/Zoom is clickable outside the panel. The panel remains clickable.";
 
   await enableClickThroughOutsidePanel();
 }
@@ -412,6 +412,7 @@ async function analyzeSingleBox(id: number): Promise<void> {
   const box = boxes.value.find((item) => item.id === id);
 
   if (!box || !isLive.value) {
+    await enableClickThroughOutsidePanel();
     return;
   }
 
@@ -499,6 +500,10 @@ async function toggleAlwaysOnTop(): Promise<void> {
 }
 
 function minimizeApp(): void {
+  if (isDrawMode.value) {
+    return;
+  }
+
   window.electronAPI.minimizeWindow();
 }
 
@@ -588,7 +593,7 @@ onBeforeUnmount(() => {
           <span>Screen Analysis</span>
         </div>
 
-        <button @click="minimizeApp">_</button>
+        <button :disabled="isDrawMode" @click="minimizeApp">_</button>
         <button class="danger" @click="closeApp">X</button>
       </header>
 

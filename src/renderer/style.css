@@ -80,6 +80,8 @@ input {
   border-bottom: 1px solid rgba(148, 163, 184, 0.16);
 }
 
+/* Important: no -webkit-app-region: drag here.
+   This prevents the user from manually moving the app window. */
 .drag-area {
   flex: 1;
   height: 100%;
@@ -88,7 +90,7 @@ input {
   gap: 8px;
   font-weight: 700;
   font-size: 13px;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
 }
 
 .top-bar button,
