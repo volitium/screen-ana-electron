@@ -166,6 +166,8 @@ async function enterDrawMode(): Promise<void> {
     return;
   }
 
+  await window.electronAPI.forceFullScreenBounds();
+
   const frame = captureWholeFrameDataUrl();
 
   if (!frame) {
@@ -585,8 +587,8 @@ onBeforeUnmount(() => {
         </button>
 
         <div class="button-row">
-          <button :disabled="!isLive" class="primary-btn" @click="enterDrawMode">
-            Draw / Edit Boxes
+          <button :disabled="!isLive || isDrawMode" class="primary-btn" @click="enterDrawMode">
+            {{ isDrawMode ? "Drawing..." : "Draw / Edit Boxes" }}
           </button>
 
           <button :disabled="!isLive || !isDrawMode" class="primary-btn" @click="finishDrawing">

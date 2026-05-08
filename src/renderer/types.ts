@@ -41,6 +41,8 @@ declare global {
 
       setPanelBounds: (bounds: PanelBounds) => Promise<boolean>;
 
+      forceFullScreenBounds: () => Promise<boolean>;
+
       getWindowSize: () => Promise<WindowSize>;
     };
   }

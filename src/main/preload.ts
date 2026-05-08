@@ -12,5 +12,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   setPanelBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
     ipcRenderer.invoke("window:setPanelBounds", bounds),
 
+  forceFullScreenBounds: () => ipcRenderer.invoke("window:forceFullScreenBounds"),
+
   getWindowSize: () => ipcRenderer.invoke("window:getSize")
 });

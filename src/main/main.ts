@@ -34,6 +34,22 @@ function setMousePassthrough(value: boolean): void {
   }
 }
 
+function forceFullScreenBounds(): void {
+  if (!mainWindow) {
+    return;
+  }
+
+  const display = screen.getPrimaryDisplay();
+  const bounds = display.bounds;
+
+  mainWindow.setBounds(bounds);
+  mainWindow.setAlwaysOnTop(true, "screen-saver");
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.moveTop();
+}
+
 function updateMouseMode(): void {
   if (!mainWindow) {
     return;
@@ -102,6 +118,7 @@ function createMainWindow(): void {
     }
   });
 
+  mainWindow.setBounds(bounds);
   mainWindow.setAlwaysOnTop(true, "screen-saver");
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
@@ -175,6 +192,7 @@ ipcMain.handle("window:setDrawingMode", (_event, value: boolean) => {
 
   if (value) {
     browserInteractionMode = false;
+    forceFullScreenBounds();
   }
 
   updateMouseMode();
@@ -190,6 +208,11 @@ ipcMain.handle("window:setBrowserInteractionMode", (_event, value: boolean) => {
 ipcMain.handle("window:setPanelBounds", (_event, bounds: PanelBounds) => {
   panelBounds = bounds;
   updateMouseMode();
+  return true;
+});
+
+ipcMain.handle("window:forceFullScreenBounds", () => {
+  forceFullScreenBounds();
   return true;
 });
 
