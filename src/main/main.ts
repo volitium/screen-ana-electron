@@ -1,6 +1,13 @@
 import { app, BrowserWindow, ipcMain, session, desktopCapturer, screen } from "electron";
 import path from "path";
 
+/*
+  Important:
+  This must be called before app.whenReady().
+  It helps prevent black/white/blur compositor issues with transparent always-on-top windows.
+*/
+app.disableHardwareAcceleration();
+
 let mainWindow: BrowserWindow | null = null;
 let mouseModeInterval: NodeJS.Timeout | null = null;
 

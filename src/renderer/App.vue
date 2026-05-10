@@ -22,7 +22,6 @@ const boxes = ref<ScreenBox[]>([]);
 const nextBoxId = ref(1);
 
 const isDrawMode = ref(false);
-const frozenImageDataUrl = ref("");
 
 const isDrawing = ref(false);
 const startX = ref(0);
@@ -96,9 +95,9 @@ async function selectScreen(): Promise<void> {
     const mediaStream = await navigator.mediaDevices.getDisplayMedia({
       audio: false,
       video: {
-        frameRate: 15,
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
+        frameRate: 30,
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
       }
     });
 
@@ -141,7 +140,6 @@ async function stopScreen(): Promise<void> {
   boxes.value = [];
   nextBoxId.value = 1;
   isDrawMode.value = false;
-  frozenImageDataUrl.value = "";
   latestAnswer.value = "Screen access stopped.";
 
   await enableClickThroughOutsidePanel();
@@ -169,32 +167,14 @@ function captureWholeFrameCanvas(): HTMLCanvasElement | null {
   return canvas;
 }
 
-function captureWholeFrameDataUrl(): string | null {
-  const canvas = captureWholeFrameCanvas();
-
-  if (!canvas) {
-    return null;
-  }
-
-  return canvas.toDataURL("image/jpeg", 0.76);
-}
-
 async function enterDrawMode(): Promise<void> {
   if (!isLive.value) {
     latestAnswer.value = "Select a screen first.";
     return;
   }
 
-  const frame = captureWholeFrameDataUrl();
-
-  if (!frame) {
-    latestAnswer.value = "Could not freeze screen yet. Try again in a second.";
-    return;
-  }
-
-  frozenImageDataUrl.value = frame;
   isDrawMode.value = true;
-  latestAnswer.value = "Draw mode active. Draw, move, resize, or delete boxes.";
+  latestAnswer.value = "Live draw mode active. Draw, move, resize, or delete boxes.";
 
   await window.electronAPI.setBrowserInteractionMode(false);
   await window.electronAPI.setDrawingMode(true);
@@ -202,7 +182,6 @@ async function enterDrawMode(): Promise<void> {
 
 async function finishDrawing(): Promise<void> {
   isDrawMode.value = false;
-  frozenImageDataUrl.value = "";
   isDrawing.value = false;
   draggingBoxId.value = null;
   resizingBoxId.value = null;
@@ -548,10 +527,8 @@ onBeforeUnmount(() => {
       @mouseup="onDrawMouseUp"
       @mouseleave="onDrawMouseUp"
     >
-      <img class="frozen-screen" :src="frozenImageDataUrl" alt="Frozen screen" />
-
       <div class="draw-mode-banner">
-        DRAW MODE - DRAW, MOVE, RESIZE, OR DELETE BOXES
+        LIVE DRAW MODE - DRAW, MOVE, RESIZE, OR DELETE BOXES
       </div>
 
       <div
