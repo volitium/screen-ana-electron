@@ -1,11 +1,7 @@
-import { app, BrowserWindow, ipcMain, session, desktopCapturer, screen } from "electron";
+import { app, BrowserWindow, ipcMain, session, desktopCapturer, screen, shell } from "electron";
 import path from "path";
+import fs from "fs/promises";
 
-/*
-  Important:
-  This must be called before app.whenReady().
-  It helps prevent black/white/blur compositor issues with transparent always-on-top windows.
-*/
 app.disableHardwareAcceleration();
 
 let mainWindow: BrowserWindow | null = null;
@@ -22,10 +18,50 @@ type PanelBounds = {
   height: number;
 };
 
+type SaveScreenshotPayload = {
+  dataUrl: string;
+  category: string;
+  boxLabel: string;
+};
+
 let panelBounds: PanelBounds | null = null;
 
 function isWindowUsable(): boolean {
   return mainWindow !== null && !mainWindow.isDestroyed();
+}
+
+function getScreenshotsRoot(): string {
+  return path.join(app.getPath("userData"), "analysis-screenshots");
+}
+
+function safeFileName(value: string): string {
+  return value.replace(/[<>:"/\\|?*]+/g, "-").replace(/\s+/g, " ").trim();
+}
+
+async function saveScreenshot(payload: SaveScreenshotPayload): Promise<string> {
+  const matches = payload.dataUrl.match(/^data:image\/png;base64,(.+)$/) ||
+    payload.dataUrl.match(/^data:image\/jpeg;base64,(.+)$/);
+
+  if (!matches) {
+    throw new Error("Invalid image data.");
+  }
+
+  const category = safeFileName(payload.category || "Uncategorized");
+  const boxLabel = safeFileName(payload.boxLabel || "Box");
+
+  const folder = path.join(getScreenshotsRoot(), category);
+  await fs.mkdir(folder, { recursive: true });
+
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/[:.]/g, "-");
+
+  const filePath = path.join(folder, `${category} - ${boxLabel} - ${timestamp}.png`);
+  const buffer = Buffer.from(matches[1], "base64");
+
+  await fs.writeFile(filePath, buffer);
+
+  return filePath;
 }
 
 function setMousePassthrough(value: boolean): void {
@@ -93,22 +129,6 @@ function unlockWindowAfterDrawing(): void {
   mainWindow.show();
 }
 
-function forceFullScreenBounds(): void {
-  if (!isWindowUsable() || !mainWindow) {
-    return;
-  }
-
-  const display = screen.getPrimaryDisplay();
-  const bounds = display.bounds;
-
-  mainWindow.setBounds(bounds);
-  mainWindow.setAlwaysOnTop(true, "screen-saver");
-  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  mainWindow.show();
-  mainWindow.focus();
-  mainWindow.moveTop();
-}
-
 function updateMouseMode(): void {
   if (!isWindowUsable() || !mainWindow) {
     return;
@@ -141,11 +161,7 @@ function updateMouseMode(): void {
     cursorY >= panelBounds.y &&
     cursorY <= panelBounds.y + panelBounds.height;
 
-  if (insidePanel) {
-    setMousePassthrough(false);
-  } else {
-    setMousePassthrough(true);
-  }
+  setMousePassthrough(!insidePanel);
 }
 
 function startMouseModeInterval(): void {
@@ -273,11 +289,7 @@ ipcMain.handle("window:setAlwaysOnTop", (_event, value: boolean) => {
 });
 
 ipcMain.handle("window:minimize", () => {
-  if (!isWindowUsable() || !mainWindow) {
-    return false;
-  }
-
-  if (isDrawingMode) {
+  if (!isWindowUsable() || !mainWindow || isDrawingMode) {
     return false;
   }
 
@@ -320,11 +332,6 @@ ipcMain.handle("window:setPanelBounds", (_event, bounds: PanelBounds) => {
   return true;
 });
 
-ipcMain.handle("window:forceFullScreenBounds", () => {
-  forceFullScreenBounds();
-  return true;
-});
-
 ipcMain.handle("window:getSize", () => {
   if (!isWindowUsable() || !mainWindow) {
     return {
@@ -339,4 +346,21 @@ ipcMain.handle("window:getSize", () => {
     width: bounds.width,
     height: bounds.height
   };
+});
+
+ipcMain.handle("screenshots:save", async (_event, payload: SaveScreenshotPayload) => {
+  return await saveScreenshot(payload);
+});
+
+ipcMain.handle("screenshots:openFolder", async () => {
+  const folder = getScreenshotsRoot();
+  await fs.mkdir(folder, { recursive: true });
+  await shell.openPath(folder);
+  return true;
+});
+
+ipcMain.handle("screenshots:getFolder", async () => {
+  const folder = getScreenshotsRoot();
+  await fs.mkdir(folder, { recursive: true });
+  return folder;
 });

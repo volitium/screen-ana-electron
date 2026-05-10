@@ -12,7 +12,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   setPanelBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
     ipcRenderer.invoke("window:setPanelBounds", bounds),
 
-  forceFullScreenBounds: () => ipcRenderer.invoke("window:forceFullScreenBounds"),
+  getWindowSize: () => ipcRenderer.invoke("window:getSize"),
 
-  getWindowSize: () => ipcRenderer.invoke("window:getSize")
+  saveScreenshot: (payload: { dataUrl: string; category: string; boxLabel: string }) =>
+    ipcRenderer.invoke("screenshots:save", payload),
+
+  openScreenshotsFolder: () => ipcRenderer.invoke("screenshots:openFolder"),
+  getScreenshotsFolder: () => ipcRenderer.invoke("screenshots:getFolder")
 });

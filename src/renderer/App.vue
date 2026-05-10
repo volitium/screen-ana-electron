@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
-import type { ScreenBox } from "./types";
-import { analyzeImageRegion } from "./api/analysisApi";
+import type { BoxColor, ScreenBox } from "./types";
 
 const videoRef = ref<HTMLVideoElement | null>(null);
 const drawLayerRef = ref<HTMLDivElement | null>(null);
 const panelRef = ref<HTMLElement | null>(null);
+const reappearButtonRef = ref<HTMLButtonElement | null>(null);
 
 const stream = ref<MediaStream | null>(null);
 const isLive = ref(false);
 const isAnalyzing = ref(false);
 const alwaysOnTop = ref(true);
+const panelHidden = ref(false);
+const transparentBoxes = ref(false);
 
 const intervalSeconds = ref(60);
 const timerRunning = ref(false);
@@ -60,13 +62,13 @@ const draftBoxStyle = computed(() => {
 async function reportPanelBounds(): Promise<void> {
   await nextTick();
 
-  const panel = panelRef.value;
+  const activeElement = panelHidden.value ? reappearButtonRef.value : panelRef.value;
 
-  if (!panel) {
+  if (!activeElement) {
     return;
   }
 
-  const rect = panel.getBoundingClientRect();
+  const rect = activeElement.getBoundingClientRect();
 
   await window.electronAPI.setPanelBounds({
     x: rect.left,
@@ -84,6 +86,20 @@ async function enableClickThroughOutsidePanel(): Promise<void> {
 
 async function setPanelPosition(position: PanelPosition): Promise<void> {
   panelPosition.value = position;
+  await enableClickThroughOutsidePanel();
+}
+
+async function hideWebAppPanel(): Promise<void> {
+  if (isDrawMode.value) {
+    return;
+  }
+
+  panelHidden.value = true;
+  await enableClickThroughOutsidePanel();
+}
+
+async function showWebAppPanel(): Promise<void> {
+  panelHidden.value = false;
   await enableClickThroughOutsidePanel();
 }
 
@@ -140,6 +156,7 @@ async function stopScreen(): Promise<void> {
   boxes.value = [];
   nextBoxId.value = 1;
   isDrawMode.value = false;
+  panelHidden.value = false;
   latestAnswer.value = "Screen access stopped.";
 
   await enableClickThroughOutsidePanel();
@@ -173,6 +190,7 @@ async function enterDrawMode(): Promise<void> {
     return;
   }
 
+  panelHidden.value = false;
   isDrawMode.value = true;
   latestAnswer.value = "Live draw mode active. Draw, move, resize, or delete boxes.";
 
@@ -283,7 +301,11 @@ function onDrawMouseUp(): void {
         height,
         loading: false,
         error: null,
-        result: null
+        result: null,
+        savedPath: null,
+        savedCategory: null,
+        score: null,
+        boxColor: "blue"
       });
 
       selectedBoxId.value = id;
@@ -339,6 +361,17 @@ function getBoxStyle(box: ScreenBox): Record<string, string> {
   };
 }
 
+function getBoxClass(box: ScreenBox): Record<string, boolean> {
+  return {
+    selected: selectedBoxId.value === box.id,
+    "box-blue": !box.boxColor || box.boxColor === "blue",
+    "box-red": box.boxColor === "red",
+    "box-yellow": box.boxColor === "yellow",
+    "box-green": box.boxColor === "green",
+    "box-transparent": transparentBoxes.value
+  };
+}
+
 async function cropBoxFromCurrentFrame(box: ScreenBox): Promise<string | null> {
   const videoCanvas = captureWholeFrameCanvas();
 
@@ -382,7 +415,51 @@ async function cropBoxFromCurrentFrame(box: ScreenBox): Promise<string | null> {
     cropHeight
   );
 
-  return cropCanvas.toDataURL("image/jpeg", 0.74);
+  return cropCanvas.toDataURL("image/png");
+}
+
+function getRandomScore(): number {
+  return Math.floor(Math.random() * 100) + 1;
+}
+
+function getColorFromScore(score: number): BoxColor {
+  if (score <= 50) {
+    return "red";
+  }
+
+  if (score <= 80) {
+    return "yellow";
+  }
+
+  return "green";
+}
+
+function getResultFromScore(score: number): string {
+  if (score <= 50) {
+    return "Most likely AI";
+  }
+
+  if (score <= 80) {
+    return "Uncertain";
+  }
+
+  return "Most likely real";
+}
+
+function getSaveCategoryFromScore(score: number): string {
+  if (score <= 50) {
+    return "For sure AI";
+  }
+
+  if (score <= 80) {
+    return "Uncertain";
+  }
+
+  return "Confident not AI";
+}
+
+async function openSavedImagesFolder(): Promise<void> {
+  await window.electronAPI.openScreenshotsFolder();
 }
 
 async function analyzeSingleBox(id: number): Promise<void> {
@@ -407,7 +484,29 @@ async function analyzeSingleBox(id: number): Promise<void> {
   box.error = null;
 
   try {
-    box.result = await analyzeImageRegion(croppedImage);
+    const score = getRandomScore();
+    const color = getColorFromScore(score);
+    const resultText = getResultFromScore(score);
+    const category = getSaveCategoryFromScore(score);
+
+    box.score = score;
+    box.boxColor = color;
+
+    box.result = {
+      result: resultText,
+      confidence: `${score}%`,
+      confidance: `${score}%`,
+      meta: `Random score ${score}/100. Red 1-50 = likely AI, yellow 51-80 = uncertain, green 81-100 = likely real.`
+    };
+
+    const savedPath = await window.electronAPI.saveScreenshot({
+      dataUrl: croppedImage,
+      category,
+      boxLabel: box.label
+    });
+
+    box.savedCategory = category;
+    box.savedPath = savedPath;
   } catch (error) {
     box.error = error instanceof Error ? error.message : "Analysis failed.";
   } finally {
@@ -433,13 +532,13 @@ async function analyzeAll(): Promise<void> {
       return;
     }
 
-    latestAnswer.value = "Analyzing all boxes...";
+    latestAnswer.value = "Analyzing all boxes with random 1-100 score and saving screenshots...";
 
     for (const box of boxes.value) {
       await analyzeSingleBox(box.id);
     }
 
-    latestAnswer.value = "All boxes analyzed.";
+    latestAnswer.value = "All boxes analyzed, colored, and saved.";
   } catch (error) {
     latestAnswer.value = error instanceof Error ? error.message : "Analysis failed.";
   } finally {
@@ -535,7 +634,7 @@ onBeforeUnmount(() => {
         v-for="box in boxes"
         :key="box.id"
         class="screen-box"
-        :class="{ selected: selectedBoxId === box.id }"
+        :class="getBoxClass(box)"
         :style="getBoxStyle(box)"
         @mousedown="startDragging($event, box)"
       >
@@ -555,6 +654,7 @@ onBeforeUnmount(() => {
         v-for="box in boxes"
         :key="box.id"
         class="screen-box passive-box"
+        :class="getBoxClass(box)"
         :style="getBoxStyle(box)"
       >
         <div class="screen-box-label">
@@ -563,7 +663,22 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <section ref="panelRef" class="assistant-panel" :class="panelPositionClass">
+    <button
+      v-if="panelHidden && !isDrawMode"
+      ref="reappearButtonRef"
+      class="reappear-button"
+      :class="panelPositionClass"
+      @click="showWebAppPanel"
+    >
+      Show
+    </button>
+
+    <section
+      v-if="!panelHidden"
+      ref="panelRef"
+      class="assistant-panel"
+      :class="panelPositionClass"
+    >
       <header class="top-bar">
         <div class="drag-area">
           <div class="status-dot" :class="{ active: isLive }"></div>
@@ -593,12 +708,25 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
+        <label class="option-row">
+          <input v-model="transparentBoxes" type="checkbox" />
+          See-through boxes
+        </label>
+
         <button
           :disabled="!isLive || isAnalyzing"
           class="primary-btn full-width"
           @click="analyzeAll"
         >
           {{ isAnalyzing ? "Analyzing..." : "Analyze All" }}
+        </button>
+
+        <button class="full-width" @click="openSavedImagesFolder">
+          Open Saved Images Folder
+        </button>
+
+        <button class="full-width" :disabled="isDrawMode" @click="hideWebAppPanel">
+          Hide Web App
         </button>
 
         <div class="timer-row">
@@ -681,9 +809,13 @@ onBeforeUnmount(() => {
             </p>
 
             <div v-else-if="box.result">
+              <p>Score: {{ box.score }}/100</p>
               <p>Result: {{ box.result.result }}</p>
-              <p>Confidence: {{ box.result.confidance || box.result.confidence || "N/A" }}</p>
+              <p>Color: {{ box.boxColor }}</p>
+              <p>Confidence: {{ box.result.confidence || box.result.confidance || "N/A" }}</p>
               <p>Meta: {{ box.result.meta || "N/A" }}</p>
+              <p v-if="box.savedCategory">Saved As: {{ box.savedCategory }}</p>
+              <p v-if="box.savedPath">Saved: {{ box.savedPath }}</p>
             </div>
 
             <p v-else>No result yet.</p>
